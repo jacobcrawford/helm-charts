@@ -59,24 +59,34 @@ config:
   auth:
     type: enterprise
   auth_enabled: true
+
   license:
     path: "/etc/enterprise-logs/license/license.jwt"
   cluster_name: "{{ .Release.Name }}"
+
   server:
     http_listen_port: 3100
     grpc_listen_port: 9095
+
   admin_client:
     storage:
       type: s3
       s3:
-        endpoint: "{{ .Release.Name }}-minio:9000"
+        endpoint: "{{ include \"loki.fullname\" . }}-minio:9000"
         bucket_name: enterprise-logs-admin
         secret_access_key: supersecret
         access_key_id: enterprise-logs
         insecure: true
+
   compactor:
     shared_store: s3
     working_directory: /data/boltdb-shipper-compactor
+
+  distributor:
+    ring:
+      kvstore:
+        store: memberlist
+
   ingester:
     lifecycler:
       num_tokens: 512
@@ -84,24 +94,37 @@ config:
         replication_factor: 3
         kvstore:
           store: memberlist
-  limits_config:
-    reject_old_samples: true
-    reject_old_samples_max_age: 168h
+    chunk_idle_period: 30m
+    chunk_block_size: 262144
+    chunk_encoding: snappy
+    chunk_retain_period: 1m
+
   ingester_client:
     grpc_client_config:
       max_recv_msg_size: 104857600
       max_send_msg_size: 104857600
+
+  limits_config:
+    enforce_metric_name: false
+    reject_old_samples: true
+    reject_old_samples_max_age: 168h
+    max_cache_freshness_per_query: 10m
+
+  frontend:
+    log_queries_longer_than: 10s
+    compress_responses: true
+    tail_proxy_url: "http://{{ include \"loki.querierFullname\" . }}:3100"
+
+  frontend_worker:
+    frontend_address: "{{ include \"loki.queryFrontendFullname\" . }}:9095"
+
   memberlist:
-    abort_if_cluster_join_fails: false
-    bind_port: 7946
     join_members:
       - "{{ include \"loki.fullname\" . }}-memberlist"
-  distributor:
-    ring:
-      kvstore:
-        store: memberlist
+
   querier:
     query_ingesters_within: 12h
+
   query_range:
     split_queries_by_interval: 24h
     align_queries_with_step: true
@@ -112,6 +135,7 @@ config:
           expiration: 1h
         memcached_client:
           timeout: 1s
+
   schema_config:
     configs:
       - from: 2021-01-01
@@ -121,9 +145,10 @@ config:
         index:
           prefix: index_
           period: 24h
+
   storage_config:
     aws:
-      endpoint: "{{ .Release.Name }}-minio:9000"
+      endpoint: "{{ include \"loki.fullname\" . }}-minio:9000"
       bucketnames: enterprise-logs-tsdb
       access_key_id: enterprise-logs
       secret_access_key: supersecret
@@ -134,11 +159,12 @@ config:
       cache_location: /var/loki/cache
       cache_ttl: 24h
       shared_store: s3
+
   ruler:
     storage:
       type: s3
       s3:
-        endpoint: "{{ .Release.Name }}-minio:9000"
+        endpoint: "{{ include \"loki.fullname\" . }}-minio:9000"
         bucketnames: enterprise-logs-ruler
         access_key_id: enterprise-logs
         secret_access_key: supersecret
@@ -151,8 +177,6 @@ config:
       kvstore:
         store: memberlist
     rule_path: /var/loki
-  frontend:
-    log_queries_longer_than: 10s
 
 # -- Configuration for `tokengen` target
 tokengen:
